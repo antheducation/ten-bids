@@ -1,0 +1,16 @@
+name = "ten-bids"
+main = "src/worker.js"
+compatibility_date = "2025-09-01"
+
+[[rules]]
+type = "Text"
+globs = ["**/*.html", "**/*.md"]
+fallthrough = true
+
+[[durable_objects.bindings]]
+name = "MATCH"
+class_name = "Match"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["Match"]

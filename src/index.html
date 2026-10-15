@@ -1,0 +1,256 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Ten Bids: a sealed-bid strategy game for humans and agents</title>
+<style>
+  :root { --bg:#0f1420; --panel:#182032; --line:#2a3550; --ink:#e8ecf5; --dim:#8d99b5; --gold:#f4c95d; --red:#ef6f6c; --green:#5fd39a; --blue:#6aa8ff; }
+  * { box-sizing:border-box; }
+  body { margin:0; font:16px/1.45 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif; background:radial-gradient(1200px 600px at 50% -200px,#22304d,var(--bg)); color:var(--ink); min-height:100vh; }
+  main { max-width:880px; margin:0 auto; padding:20px 16px 60px; }
+  h1 { font-size:30px; margin:6px 0 2px; letter-spacing:.5px; } h1 span { color:var(--gold); }
+  .sub { color:var(--dim); margin:0 0 18px; }
+  .panel { background:var(--panel); border:1px solid var(--line); border-radius:14px; padding:16px; margin:12px 0; }
+  .row { display:flex; gap:10px; flex-wrap:wrap; align-items:center; }
+  input, select { background:#0d1322; color:var(--ink); border:1px solid var(--line); border-radius:9px; padding:10px 12px; font-size:16px; }
+  input { min-width:0; }
+  button { background:var(--blue); color:#06101f; border:0; border-radius:9px; padding:10px 16px; font-size:16px; font-weight:650; cursor:pointer; }
+  button.alt { background:#2a3550; color:var(--ink); } button:disabled { opacity:.45; cursor:default; }
+  .muted { color:var(--dim); font-size:14px; }
+  .code { font:700 28px ui-monospace,Consolas,monospace; letter-spacing:4px; color:var(--gold); }
+  .pot { display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
+  .prize { width:62px; height:84px; border-radius:10px; display:grid; place-items:center; font:800 28px ui-monospace,Consolas,monospace; background:#f7f1de; color:#1b2233; box-shadow:0 4px 0 #b9ad8a; }
+  .prize.neg { background:#f6d4d3; color:#8a1f1c; box-shadow:0 4px 0 #c49090; }
+  .rule { font-weight:700; } .rule.high { color:var(--green); } .rule.low { color:var(--red); }
+  .hand { display:flex; gap:8px; flex-wrap:wrap; }
+  .card { width:54px; height:72px; border-radius:9px; font:800 24px ui-monospace,Consolas,monospace; background:#e6edff; color:#13203d; box-shadow:0 4px 0 #8fa2d0; padding:0; }
+  .card:hover:not(:disabled) { transform:translateY(-3px); }
+  .card.sel { background:var(--gold); box-shadow:0 4px 0 #a88326; }
+  table { width:100%; border-collapse:collapse; } td, th { padding:7px 6px; border-bottom:1px solid var(--line); text-align:left; } th { color:var(--dim); font-weight:600; font-size:13px; }
+  .tag { font-size:12px; padding:2px 7px; border-radius:20px; background:#2a3550; color:var(--dim); margin-left:6px; }
+  .you { color:var(--gold); }
+  .ok { color:var(--green); } .wait { color:var(--dim); }
+  .bar { height:6px; background:#0d1322; border-radius:6px; overflow:hidden; margin-top:8px; } .bar i { display:block; height:100%; background:var(--gold); transition:width .8s linear; }
+  .log td { font-size:14px; } .x { text-decoration:line-through; color:var(--dim); }
+  .banner { font-size:22px; font-weight:800; color:var(--gold); }
+  .hidden { display:none; }
+  .err { color:var(--red); min-height:1.2em; }
+  a { color:var(--blue); }
+  details summary { cursor:pointer; color:var(--dim); }
+</style>
+</head>
+<body>
+<main>
+  <h1>Ten <span>Bids</span></h1>
+  <p class="sub">A five-minute sealed-bid strategy game for 2-4 players. Humans play here; AI agents play the same match through a <a href="/api" target="_blank">JSON API</a>.</p>
+
+  <section id="home">
+    <div class="panel">
+      <div class="row"><input id="name" placeholder="Your name" maxlength="24"></div>
+      <p class="muted" style="margin:10px 0 6px">Start a match</p>
+      <div class="row">
+        <select id="seats"><option value="2">2 players</option><option value="3" selected>3 players</option><option value="4">4 players</option></select>
+        <button id="quick">Play vs bots now</button>
+        <button id="create" class="alt">Create a match to share</button>
+      </div>
+      <p class="muted" style="margin:14px 0 6px">Or join a match</p>
+      <div class="row"><input id="joinCode" placeholder="CODE" maxlength="5" style="width:120px;text-transform:uppercase"><button id="join" class="alt">Join</button></div>
+      <p class="err" id="homeErr"></p>
+    </div>
+    <div class="panel">
+      <b>How to play</b>
+      <p>Everyone holds the same ten bid cards, 1 to 10. Each round a prize card (-3 to 7) goes into the pot. All players secretly play one bid card at the same time, and each card is spent for good. <b>Bids that tie are cancelled.</b> If the pot is worth 0 or more, the <span class="rule high">highest</span> remaining bid takes it; if it is negative, the <span class="rule low">lowest</span> remaining bid is stuck with it. If every bid cancels, the pot carries over. After 10 rounds the highest total wins.</p>
+      <p class="muted">You have 45 seconds per round; if time runs out your lowest card is played for you.</p>
+    </div>
+  </section>
+
+  <section id="lobby" class="hidden">
+    <div class="panel">
+      <div class="row" style="justify-content:space-between"><div>Match code <div class="code" id="lCode"></div></div>
+        <div><button id="copy" class="alt">Copy invite link</button></div></div>
+      <p class="muted">Share the code or link with people, or give it to an agent (see <a href="/api" target="_blank">API</a>). Empty seats can be filled with bots.</p>
+      <table><tbody id="lSeats"></tbody></table>
+      <div class="row" style="margin-top:12px"><button id="fill">Fill empty seats with bots and start</button></div>
+      <p class="err" id="lobbyErr"></p>
+    </div>
+  </section>
+
+  <section id="game" class="hidden">
+    <div class="panel">
+      <div class="row" style="justify-content:space-between">
+        <div><span class="muted">Round</span> <b id="gRound"></b> <span class="muted">· match</span> <b id="gCode"></b></div>
+        <div class="muted" id="gTimer"></div>
+      </div>
+      <div class="bar"><i id="gBar"></i></div>
+      <div class="row" style="margin-top:14px;gap:18px">
+        <div class="pot" id="gPot"></div>
+        <div><div id="gRule" class="rule"></div><div class="muted" id="gLeft"></div></div>
+      </div>
+    </div>
+    <div class="panel" id="handPanel">
+      <div class="row" style="justify-content:space-between"><b id="handTitle">Your bid</b><span class="muted" id="handHint"></span></div>
+      <div class="hand" id="gHand" style="margin-top:10px"></div>
+      <p class="err" id="gameErr"></p>
+    </div>
+    <div class="panel" id="lastPanel"><b>Last round</b><div id="gLast" style="margin-top:6px"></div></div>
+    <div class="panel"><table><thead><tr><th>Player</th><th>Score</th><th>Cards left</th><th>This round</th></tr></thead><tbody id="gPlayers"></tbody></table></div>
+  </section>
+
+  <section id="over" class="hidden">
+    <div class="panel"><div class="banner" id="oBanner"></div><p class="muted" id="oSub"></p>
+      <div class="row"><button id="again">Play again</button><button id="share" class="alt">Copy replay link</button></div></div>
+  </section>
+
+  <section id="logWrap" class="hidden">
+    <div class="panel"><details id="logDetails" open><summary>Match log</summary>
+      <table class="log"><thead><tr><th>#</th><th>Pot</th><th>Bids</th><th>Result</th></tr></thead><tbody id="log"></tbody></table></details></div>
+  </section>
+  <p class="muted">Agents: <a href="/api" target="_blank">API docs</a> · <a href="https://github.com/antheducation/ten-bids" target="_blank">source and sample bot</a></p>
+</main>
+<script>
+const $ = (id) => document.getElementById(id);
+const el = (tag, props = {}, ...kids) => { const e = Object.assign(document.createElement(tag), props); for (const k of kids) e.append(k); return e; };
+const show = (...ids) => ["home","lobby","game","over","logWrap"].forEach((s) => $(s).classList.toggle("hidden", !ids.includes(s)));
+let code = null, tok = null, poll = null, busy = false, lastRound = 0;
+$("name").value = localStorage.getItem("tb-name") || "";
+
+async function api(path, body) {
+  const r = await fetch(path, body ? { method:"POST", headers:{ "content-type":"application/json" }, body:JSON.stringify(body) } : {});
+  const j = await r.json().catch(() => ({ ok:false, error:"bad response" }));
+  if (!j.ok) throw new Error(j.error || "request failed");
+  return j;
+}
+const myName = () => { const n = $("name").value.trim() || "Human"; localStorage.setItem("tb-name", n); return n; };
+
+async function newMatch(quick) {
+  $("homeErr").textContent = "";
+  try {
+    const m = await api("/api/matches", { seats:Number($("seats").value) });
+    await enter(m.code);
+    if (quick) await api(`/api/matches/${code}/bots`, { token:tok });
+  } catch (e) { $("homeErr").textContent = e.message; }
+}
+async function enter(c) {
+  c = c.toUpperCase();
+  const saved = localStorage.getItem("tb-tok-" + c);
+  if (saved) { code = c; tok = saved; }
+  else {
+    const j = await api(`/api/matches/${c}/join`, { name:myName(), kind:"human" });
+    code = c; tok = j.token; localStorage.setItem("tb-tok-" + c, tok);
+  }
+  history.replaceState(null, "", "/?m=" + code);
+  start();
+}
+function start() { clearInterval(poll); refresh(); poll = setInterval(refresh, 900); }
+
+async function refresh() {
+  if (busy) return;
+  try {
+    const r = await fetch(`/api/matches/${code}/state` + (tok ? `?token=${tok}` : ""));
+    const s = await r.json();
+    if (!s.ok) throw new Error(s.error);
+    render(s);
+  } catch (e) { $("gameErr").textContent = e.message; }
+}
+
+function render(s) {
+  if (s.status === "lobby") return renderLobby(s);
+  if (s.status === "expired") { clearInterval(poll); show("home"); $("homeErr").textContent = "That lobby expired. Start a new match."; return; }
+  renderLog(s);
+  if (s.status === "finished") return renderOver(s);
+  show("game","logWrap");
+  $("gRound").textContent = `${s.round} / ${s.rounds}`; $("gCode").textContent = s.code;
+  const secs = Math.ceil((s.msLeft || 0) / 1000);
+  $("gTimer").textContent = `${secs}s left`;
+  $("gBar").style.width = Math.max(0, Math.min(100, (s.msLeft || 0) / 450)) + "%";
+  $("gPot").replaceChildren(...s.pot.map((c) => el("div", { className:"prize" + (c < 0 ? " neg" : ""), textContent:(c > 0 ? "+" : "") + c })));
+  $("gRule").className = "rule " + s.rule;
+  $("gRule").textContent = (s.pot.length > 1 ? `Pot worth ${s.potValue}: ` : "") + (s.rule === "high" ? "highest unique bid takes it" : "lowest unique bid is stuck with it");
+  $("gLeft").textContent = "Prizes still to come: " + (s.prizesLeft.join("  ") || "none");
+  const me = s.you;
+  $("handPanel").classList.toggle("hidden", !me);
+  if (me) {
+    $("handTitle").textContent = s.yourTurn ? "Choose your bid" : "Bid locked";
+    $("handHint").textContent = s.yourTurn ? "click a card" : `you played ${me.bid}, waiting for others`;
+    $("gHand").replaceChildren(...me.hand.map((c) => el("button", { className:"card" + (me.bid === c ? " sel" : ""), textContent:c, disabled:!s.yourTurn, onclick:() => bid(c) })));
+  }
+  $("gPlayers").replaceChildren(...s.players.map((p) => el("tr", {},
+    el("td", { className:p.you ? "you" : "" }, p.name, el("span", { className:"tag", textContent:p.kind })),
+    el("td", { textContent:p.score }),
+    el("td", { className:"muted", textContent:p.hand.join(" ") }),
+    el("td", { className:p.hasBid ? "ok" : "wait", textContent:p.hasBid ? "bid locked" : "thinking..." }))));
+  const last = s.history[s.history.length - 1];
+  $("lastPanel").classList.toggle("hidden", !last);
+  if (last) $("gLast").replaceChildren(describe(last, s.players));
+  $("gameErr").textContent = "";
+}
+
+function describe(h, players) {
+  const parts = Object.entries(h.bids).map(([seat, b]) => {
+    const x = h.cancelled.includes(b);
+    return el("span", { className:x ? "x" : "", textContent:`${players[seat].name} ${b}` });
+  });
+  const box = el("span");
+  parts.forEach((p, i) => { if (i) box.append(" · "); box.append(p); });
+  const res = h.winner === null ? "all bids cancelled, pot carries over" : `${players[h.winner].name} ${h.potValue >= 0 ? "takes" : "is stuck with"} ${h.potValue >= 0 ? "+" : ""}${h.potValue}`;
+  return el("span", {}, box, el("br"), el("b", { textContent:res }));
+}
+
+function renderLog(s) {
+  $("logWrap").classList.remove("hidden");
+  $("log").replaceChildren(...s.history.slice().reverse().map((h) => el("tr", {},
+    el("td", { textContent:h.round }),
+    el("td", { textContent:h.pot.map((c) => (c > 0 ? "+" : "") + c).join(" ") + (h.rule === "low" ? " (low)" : "") }),
+    el("td", {}, ...Object.entries(h.bids).flatMap(([seat, b], i) => [i ? " · " : "", el("span", { className:h.cancelled.includes(b) ? "x" : "", textContent:`${s.players[seat].name} ${b}` + (h.forced && h.forced.includes(Number(seat)) ? " (timeout)" : "") })])),
+    el("td", { textContent:h.winner === null ? "carried" : s.players[h.winner].name }))));
+}
+
+function renderLobby(s) {
+  show("lobby");
+  $("lCode").textContent = s.code;
+  const rows = [];
+  for (let i = 0; i < s.seatsTotal; i++) {
+    const p = s.players[i];
+    rows.push(el("tr", {}, el("td", { textContent:`Seat ${i + 1}` }), el("td", { className:p && p.you ? "you" : "muted" }, p ? p.name : "empty", p ? el("span", { className:"tag", textContent:p.kind }) : "")));
+  }
+  $("lSeats").replaceChildren(...rows);
+  $("fill").classList.toggle("hidden", !s.you);
+}
+
+function renderOver(s) {
+  clearInterval(poll);
+  show("over","logWrap");
+  const names = s.winners.map((w) => s.players[w].name);
+  const iWon = s.you && s.winners.includes(s.you.seat);
+  $("oBanner").textContent = s.you ? (iWon ? (names.length > 1 ? "You share the win!" : "You win!") : `${names.join(" & ")} wins`) : `${names.join(" & ")} wins`;
+  $("oSub").textContent = "Final: " + s.players.map((p) => `${p.name} ${p.score}`).join(" · ");
+}
+
+async function bid(c) {
+  busy = true;
+  try { render(await api(`/api/matches/${code}/move`, { token:tok, bid:c })); }
+  catch (e) { $("gameErr").textContent = e.message; }
+  finally { busy = false; }
+}
+
+$("quick").onclick = () => newMatch(true);
+$("create").onclick = () => newMatch(false);
+$("join").onclick = async () => { $("homeErr").textContent = ""; try { await enter($("joinCode").value.trim()); } catch (e) { $("homeErr").textContent = e.message; } };
+$("fill").onclick = async () => { try { await api(`/api/matches/${code}/bots`, { token:tok }); refresh(); } catch (e) { $("lobbyErr").textContent = e.message; } };
+$("copy").onclick = () => navigator.clipboard.writeText(location.origin + "/?m=" + code).then(() => $("copy").textContent = "Copied");
+$("share").onclick = () => navigator.clipboard.writeText(location.origin + "/?replay=" + code).then(() => $("share").textContent = "Copied");
+$("again").onclick = () => { clearInterval(poll); history.replaceState(null, "", "/"); show("home"); };
+
+const q = new URLSearchParams(location.search);
+if (q.get("replay")) { code = q.get("replay").toUpperCase(); tok = null; start(); }
+else if (q.get("m")) {
+  const c = q.get("m").toUpperCase();
+  enter(c).catch(async (e) => {
+    // Match already running and we hold no seat: spectate instead.
+    code = c; tok = null; start();
+  });
+}
+</script>
+</body>
+</html>
