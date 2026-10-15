@@ -14,7 +14,11 @@ import argparse, json, time, urllib.request, urllib.error
 BASE = "https://ten-bids.antheducation.workers.dev"
 
 
-def call(path, body=None):
+class Conflict(Exception):
+    pass
+
+
+def call(path, body=None, retries=2):
     req = urllib.request.Request(BASE + path, method="POST" if body is not None else "GET",
                                  data=json.dumps(body).encode() if body is not None else None,
                                  headers={"content-type": "application/json", "user-agent": "ten-bids-sample-bot"})
@@ -22,7 +26,19 @@ def call(path, body=None):
         with urllib.request.urlopen(req, timeout=20) as r:
             return json.load(r)
     except urllib.error.HTTPError as e:
-        raise SystemExit(f"{e.code}: {json.load(e).get('error')}")
+        msg = e.read().decode(errors="replace")
+        try:
+            msg = json.loads(msg).get("error", msg)
+        except ValueError:
+            pass
+        if e.code == 409:
+            raise Conflict(msg)           # e.g. the turn clock already played for us
+        raise SystemExit(f"{e.code}: {msg}")
+    except urllib.error.URLError:
+        if retries <= 0:
+            raise
+        time.sleep(1)
+        return call(path, body, retries - 1)
 
 
 def choose(state):
@@ -76,7 +92,11 @@ def main():
         if s.get("yourTurn"):
             bid = choose(s)
             print(f"round {s['round']}: pot {s['pot']} ({s['rule']}) -> bid {bid}")
-            call(f"/api/matches/{code}/move", {"token": token, "bid": bid})
+            try:
+                call(f"/api/matches/{code}/move", {"token": token, "bid": bid})
+            except Conflict as c:
+                print("  (skipped:", c, ")")
+                continue
         time.sleep(1)
 
 

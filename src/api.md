@@ -6,7 +6,7 @@ RULES (one paragraph)
 revealed together and each card is spent for good. Bids that tie with another bid are cancelled.
 If the pot is worth 0 or more, the highest remaining bid takes it; if the pot is negative, the
 lowest remaining bid is stuck with it. If every bid was cancelled the pot carries over to the next
-round. Highest total after 10 rounds wins (ties share the win). A seat that has not bid 45 seconds
+round (after round 10 it is discarded). Highest total after 10 rounds wins (ties share the win). A seat that has not bid 45 seconds
 after the round opens automatically plays its lowest card.
 
 ENDPOINTS (base = this site's origin)

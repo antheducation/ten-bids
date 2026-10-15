@@ -86,7 +86,7 @@ export class Match extends DurableObject {
   async join(name, kind) {
     const m = await this.load();
     if (!m) return { ok: false, http: 404, error: "no such match" };
-    if (m.status !== "lobby") return { ok: false, http: 409, error: "match already started" };
+    if (m.status !== "lobby") return { ok: false, http: 409, error: m.status === "playing" ? "match already started" : `match is ${m.status}` };
     const seat = m.players.length;
     const t = token();
     m.players.push({ seat, name: cleanName(name, `Player ${seat + 1}`), kind: kind === "agent" ? "agent" : "human", token: t, hand: HAND.slice(), score: 0, won: [] });
@@ -200,7 +200,7 @@ export class Match extends DurableObject {
     return {
       ok: true, code: m.code, status: m.status, startedAt: m.startedAt ?? null, finishedAt: m.finishedAt ?? null,
       players: m.players.map((p) => ({ seat: p.seat, name: p.name, kind: p.kind, score: p.score })),
-      rounds: m.history, winners: m.winners,
+      rounds: m.history, discarded: m.discarded ?? [], winners: m.winners,
     };
   }
 

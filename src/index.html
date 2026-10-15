@@ -112,7 +112,7 @@
 const $ = (id) => document.getElementById(id);
 const el = (tag, props = {}, ...kids) => { const e = Object.assign(document.createElement(tag), props); for (const k of kids) e.append(k); return e; };
 const show = (...ids) => ["home","lobby","game","over","logWrap"].forEach((s) => $(s).classList.toggle("hidden", !ids.includes(s)));
-let code = null, tok = null, poll = null, busy = false, lastRound = 0;
+let code = null, tok = null, poll = null, busy = false, epoch = 0;
 $("name").value = localStorage.getItem("tb-name") || "";
 
 async function api(path, body) {
@@ -146,10 +146,13 @@ function start() { clearInterval(poll); refresh(); poll = setInterval(refresh, 9
 
 async function refresh() {
   if (busy) return;
+  const mine = epoch;
   try {
     const r = await fetch(`/api/matches/${code}/state` + (tok ? `?token=${tok}` : ""));
     const s = await r.json();
+    if (r.status === 404) { clearInterval(poll); show("home"); $("homeErr").textContent = `No match with code ${code}.`; history.replaceState(null, "", "/"); return; }
     if (!s.ok) throw new Error(s.error);
+    if (mine !== epoch || busy) return;   // a bid happened while this poll was in flight
     render(s);
   } catch (e) { $("gameErr").textContent = e.message; }
 }
@@ -228,7 +231,9 @@ function renderOver(s) {
 }
 
 async function bid(c) {
-  busy = true;
+  if (busy) return;
+  busy = true; epoch++;
+  document.querySelectorAll("#gHand button").forEach((b) => (b.disabled = true));
   try { render(await api(`/api/matches/${code}/move`, { token:tok, bid:c })); }
   catch (e) { $("gameErr").textContent = e.message; }
   finally { busy = false; }
@@ -236,17 +241,18 @@ async function bid(c) {
 
 $("quick").onclick = () => newMatch(true);
 $("create").onclick = () => newMatch(false);
-$("join").onclick = async () => { $("homeErr").textContent = ""; try { await enter($("joinCode").value.trim()); } catch (e) { $("homeErr").textContent = e.message; } };
+$("join").onclick = async () => { $("homeErr").textContent = ""; if (!/^[A-Za-z]{5}$/.test($("joinCode").value.trim())) { $("homeErr").textContent = "Enter the 5-letter match code."; return; } try { await enter($("joinCode").value.trim()); } catch (e) { $("homeErr").textContent = e.message; } };
 $("fill").onclick = async () => { try { await api(`/api/matches/${code}/bots`, { token:tok }); refresh(); } catch (e) { $("lobbyErr").textContent = e.message; } };
 $("copy").onclick = () => navigator.clipboard.writeText(location.origin + "/?m=" + code).then(() => $("copy").textContent = "Copied");
 $("share").onclick = () => navigator.clipboard.writeText(location.origin + "/?replay=" + code).then(() => $("share").textContent = "Copied");
-$("again").onclick = () => { clearInterval(poll); history.replaceState(null, "", "/"); show("home"); };
+$("again").onclick = () => { clearInterval(poll); $("copy").textContent = "Copy invite link"; $("share").textContent = "Copy replay link"; localStorage.removeItem("tb-tok-" + code); history.replaceState(null, "", "/"); show("home"); };
 
 const q = new URLSearchParams(location.search);
 if (q.get("replay")) { code = q.get("replay").toUpperCase(); tok = null; start(); }
 else if (q.get("m")) {
   const c = q.get("m").toUpperCase();
-  enter(c).catch(async (e) => {
+  enter(c).catch((e) => {
+    if (e.message === "no such match") { show("home"); $("homeErr").textContent = `No match with code ${c}.`; history.replaceState(null, "", "/"); return; }
     // Match already running and we hold no seat: spectate instead.
     code = c; tok = null; start();
   });
